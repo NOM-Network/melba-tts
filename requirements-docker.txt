@@ -1,0 +1,11 @@
+audiostretchy[all]
+numpy
+websockets
+phonemizer
+requests
+pydub
+asyncio
+stftpitchshift
+torch-pitch-shift
+torch-time-stretch
+huggingface_hub
