@@ -7,5 +7,5 @@ Repo for melba tts server.
 **TODO:**
 ----
 - clean up code
-- add build intructions
+- add build instructions
 - add error handling
