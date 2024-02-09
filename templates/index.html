@@ -37,6 +37,20 @@
         <p>Changes the porosity of the generated audio. How similar the emotion is to the speaker reference clip. </p>
 
 
+        <!-- codec-->
+        <label for="codec">Select a codec:</label>
+        <select id="codec" name="codec">
+            <option value="wav">wav</option>
+            <option value="vorbis">ogg-vorbis</option>
+            <option value="opus">ogg-opus</option>
+            <option value="flac">flac</option>
+        </select><br>
+
+
+        <!-- bitrate-->
+        <label for="bitrate">Input a bitrate:</label>
+        <input type="text" name="bitrate" id="bitrate" placeholder="64" value="64" required><br>
+
         <h3>Voice V2 + RVC settings</h3>
         <label for="pitch2">2nd stage pitch (-12.0-24.0):</label>
         <input type="text" name="pitch2" id="pitch2" placeholder="4.0" value="4.0" required><br>

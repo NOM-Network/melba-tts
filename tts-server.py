@@ -86,7 +86,7 @@ params_whole = torch.load("Models/LibriTTS/epochs_2nd_00020.pth", map_location='
 params = params_whole['net']
 for key in model:
     if key in params:
-        print('%s loaded' % key)
+        # print('%s loaded' % key)
         try:
             model[key].load_state_dict(params[key])
         except:
@@ -143,7 +143,7 @@ def inference(text, ref_s, alpha = 0.3, beta = 0.7, diffusion_steps=5, embedding
                                          s, input_lengths, text_mask)
 
         x, _ = model.predictor.lstm(d)
-        print(f"speed: {speed}")
+        # print(f"speed: {speed}")
         duration = model.predictor.duration_proj(x) / speed
 
         duration = torch.sigmoid(duration).sum(axis=-1)
@@ -190,15 +190,55 @@ def inference(text, ref_s, alpha = 0.3, beta = 0.7, diffusion_steps=5, embedding
 
 
     end = time.perf_counter()
-    print("Time taken to convert to numpy:", (end - start) * 1000, "ms")
+    # print("Time taken to convert to numpy:", (end - start) * 1000, "ms")
 
 
     return out
 import numpy as np
-import scipy.stats as stats
 import librosa
 
 
+def remove_silence_at_end_op(pcm_array, sample_rate=40000, sample_width=2):
+    """
+    Remove silence at the end of the audio in seconds.
+
+    Args:
+    - pcm_array (list): PCM 16-bit audio array.
+    - sample_rate (int): Sampling rate of the audio in Hz. Default is 40000 Hz (40 kHz).
+    - sample_width (int): Size of a single sample in bytes. Default is 2 bytes (16-bit).
+
+    Returns:
+    - trimmed_pcm_array (numpy.ndarray): Trimmed PCM audio array.
+    """
+    # Convert pcm_array to a numpy array for efficient manipulation
+    pcm_array = np.array(pcm_array)
+
+    # Determine the length of each sample in seconds
+    sample_duration = 1.0 / sample_rate
+
+    # Calculate the absolute amplitude of the samples
+    pcm_abs = np.abs(pcm_array)
+
+    # Calculate the maximum amplitude threshold
+    max_amplitude = 2 ** 15 - 1
+
+    # Calculate the silence duration if amplitude is less than a threshold
+    silence_mask = pcm_abs <= max_amplitude * 0.001  # Adjust threshold as per your requirement
+
+    # Count the number of consecutive silent samples from the end
+    silence_count = np.sum(silence_mask[::-1].cumsum() == np.arange(1, len(pcm_array) + 1))
+
+    # Calculate the silence duration in seconds
+    silence_duration = silence_count * sample_duration
+
+    # Trim the silence from the end of the audio
+    trimmed_pcm_array = pcm_array[:-int(silence_duration * sample_rate)]
+
+    # add some silence
+    # silence = np.zeros(int(sample_rate * 0.5))
+    # trimmed_pcm_array = np.append(trimmed_pcm_array, silence)
+
+    return trimmed_pcm_array
 
 # async websocket server
 import asyncio
@@ -220,28 +260,139 @@ def pitch_shift(audio_array, factor):
 
 from scipy.interpolate import interp1d
 
-
 import io
 
 from fractions import Fraction
 from scipy.io import wavfile
 # wavfile.read("If_you_aren-t_subscribed_3.wav")
-import soundfile as sf
+import soundfile as s
+import numpy as np
+import ffmpeg
+import opuslib
+import pydub
+import pyogg
+
+def align_array_to_frame_duration(pcm, channels, samples_per_second):
+   
+    
+    # Calculate frame size and duration
+    frame_size = len(pcm) // 2 // 1
+    frame_duration = (10 * frame_size) // (samples_per_second // 1000)
+    # print("Frame duration:", frame_duration)
+
+    # calc samples per second that would getframe duration to [25, 50, 100, 200, 400, 600] /10  ms
+    frame_duration = 10 * frame_size / samples_per_second
+    
+
+    # Calculate the number of samples per frame
+    samples_per_frame = int(frame_duration * samples_per_second)
+
+
+    # return numbern of samples_per_second that would get frame duration to [25, 50, 100, 200, 400, 600] /10  ms
+    return pcm[:samples_per_frame * (len(pcm) // samples_per_frame)]
+
+
+def encode_opus(input_pcm_array, sample_rate=24000, channels=1, bitrate=64):
+    input_pcm_array = librosa.resample(input_pcm_array, orig_sr=sample_rate, target_sr=48000)
+    input_pcm_array = (input_pcm_array * 32768.0).astype(np.int16)
+    opus_buffered_encoder = pyogg.OpusEncoder()
+    opus_buffered_encoder.set_channels(channels)
+    opus_buffered_encoder.set_sampling_frequency(48000)
+    opus_buffered_encoder.set_application("voip")
+    # opus_buffered_encoder.set_bitrate(bitrate * 1000)
+
+
+    aligned = align_array_to_frame_duration(input_pcm_array, channels, 48000)
+    # encode to opus
+    start = time.perf_counter()
+    opus_bytes = opus_buffered_encoder.encode(aligned.tobytes())
+    end = time.perf_counter()
+    # print("Time taken to encode to opus:", (end - start) * 1000, "ms")
+    return opus_bytes
+
+def encode_ffmpeg(input_pcm_array, codec_type="vorbis",sample_rate=24000,target_sr=40000, channels=1, bitrate=96):
+    acodec = "pcm_s16le"
+    if codec_type == "vorbis":
+        acodec = "libvorbis"
+    elif codec_type == "opus":
+        acodec = "libopus"
+    
+    start = time.perf_counter()
+
+    # input_pcm_array = librosa.resample(input_pcm_array, orig_sr=sample_rate, target_sr=target_sr)
+    input_pcm_array = (input_pcm_array * 32768.0).astype(np.int16)
+    input_pcm_array = remove_silence_at_end_op(input_pcm_array, sample_rate=target_sr)
+    # print("bitrate: ", bitrate)
+    ffmpeg_bytes, _ = (
+        ffmpeg
+        .input('pipe:', format='s16le', ac=channels, ar=sample_rate, loglevel='error')
+        .output('pipe:', format='ogg', acodec=acodec, ar=target_sr, ab=str(bitrate)+'k', loglevel='error')
+        .run(input=input_pcm_array.tobytes(), capture_stdout=True)
+    )
+    end = time.perf_counter()
+    # print(f"Time taken to encode to {codec_type}:", (end - start) * 1000, "ms")
+    # with open(f"temp-test-{bitrate}kbps-{acodec}.ogg", "wb") as f:
+        # f.write(opus_bytes)
+    return ffmpeg_bytes
+
+def encode_flac(input_pcm_array, sample_rate=24000, target_sr=40000,channels=1, compression_level=8):
+    # encode to flac
+    start = time.perf_counter()
+    buffer_sum = b''
+    def write_callback(buffer: bytes,
+                   num_bytes: int,
+                   num_samples: int,
+                   current_frame: int):
+        nonlocal buffer_sum
+        if num_samples == 0:
+        # If there are no samples in the encoded data, this is
+        # a FLAC header. The header data will arrive in several
+        # different callbacks. Otherwise `num_samples` will be
+        # the block size value.
+            pass
+      
+        buffer_sum += buffer
+    input_pcm_array = librosa.resample(input_pcm_array, orig_sr=sample_rate, target_sr=target_sr)
+    input_pcm_array = (input_pcm_array * 32768.0).astype(np.int16)
+    input_pcm_array = remove_silence_at_end_op(input_pcm_array, sample_rate=target_sr)
+    flac = pyflac.StreamEncoder(target_sr,write_callback=write_callback,compression_level=compression_level)
+
+    flac.process(input_pcm_array)
+    flac.finish()
+    end = time.perf_counter()
+    # print("Time taken to encode to flac:", (end - start) * 1000, "ms")
+    return buffer_sum
+
+import wave
+def numpy_to_bytes(wav, sample_rate=24000, sample_width=2, channels=1):
+    wav_bytes = io.BytesIO()
+    with wave.open(wav_bytes, 'wb') as f:
+        f.setnchannels(channels)
+        f.setsampwidth(sample_width)
+        f.setframerate(sample_rate)
+        f.writeframes(wav.tobytes())
+    wav_bytes.seek(0)
+    return wav_bytes.read()
 
 
 from audiostretchy.stretch import AudioStretch
-
-
+import pyflac
+import re
 # at /synthesize
 async def synthesize(websocket, path):
     data = await websocket.recv()
-    print(data)
+    # print(data)
     json_data = json.loads(data)
     text = json_data['text']
     alpha = json_data['alpha'] if "alpha" in json_data else 0.3
     beta = json_data['beta'] if "beta" in json_data else 0.7
     speed = json_data['speed'] if "speed" in json_data else 1.0
-    print("speed: ", speed)
+
+    codec = json_data['codec'] if "codec" in json_data else "wav"
+    output_sr = json_data['output_sr'] if "output_sr" in json_data else 40000
+    bitrate = json_data['bitrate'] if "bitrate" in json_data else 64
+
+    # print("speed: ", speed)
     override_alpha = False
     override_beta = False
     try:
@@ -263,6 +414,13 @@ async def synthesize(websocket, path):
         text = text.replace("  ", " ")
         text = text.replace("*", "")
 
+        # remove brackets
+        text = text.replace("(", "")
+        text = text.replace(")", "")
+
+        # replace question marks with periods
+        text = text.replace('?', '.')
+
         
 
         text = text.strip()
@@ -279,7 +437,7 @@ async def synthesize(websocket, path):
 
         # filter out control characters like \n \r \t, etc.
         text = ''.join([i if ord(i) < 128 else ' ' for i in text])
-        print("Actual text: ", text)
+        # print("Actual text: ", text)
 
         # check that there is non repeating non alphanumeric characters
         consecutive = 0
@@ -305,8 +463,8 @@ async def synthesize(websocket, path):
     alpha = max(0.0, min(1.0, alpha)) if not override_alpha else 0.0
     beta = max(0.0, min(1.0, beta)) if not override_beta else 0.0
 
-    print("alpha: ", alpha)
-    print("beta: ", beta)
+    # print("alpha: ", alpha)
+    # print("beta: ", beta)
 
 
     ref_file = json_data['ref_file'] if "ref_file" in json_data else "default.wav"
@@ -328,14 +486,14 @@ async def synthesize(websocket, path):
  
     wav = inference(text, ref_s, diffusion_steps=10, alpha=alpha, beta=beta, embedding_scale=1.0, speed=1.0, return_device='cpu')
     end = time.perf_counter()
-    print("Inference time: ", (end - start) * 1000, "ms")
+    # print("Inference time: ", (end - start) * 1000, "ms")
     # convert to floast32 to int16
     wav = wav.astype(np.float32)
 
     # get pitch
     pitch = json_data['pitch'] if "pitch" in json_data else 1.0
     pitch = float(pitch)
-    print(pitch)
+    # print(pitch)
     if pitch != 0.0:
         wav = pitch_shift(wav, pitch)
         # wav = pitchshifter.shiftpitch(wav, pitch)
@@ -343,7 +501,7 @@ async def synthesize(websocket, path):
     # get speed
     speed = json_data['speed'] if "speed" in json_data else 1.0
     speed = float(speed)
-    print(speed)
+    # print(speed)
     if speed != 1.0:
         audio_stretch = AudioStretch()
         byte_wav = io.BytesIO()
@@ -357,25 +515,47 @@ async def synthesize(websocket, path):
         output = io.BytesIO()
         audio_stretch.save_wav(output,close=False)
         output.seek(0)
-        wav, sr = sf.read(output)        
+        wav, sr = sf.read(output)
+        output.close()        
 
 
-    # upsample to 40000
-    wav = librosa.resample(wav, orig_sr=24000, target_sr=40000)
+    async def send_data_to_websocket(websocket, buffer):
+        # split into 8000 byte chunks
+        await websocket.send(buffer)
+        
 
-    wav =(wav * 32768.0).astype(np.int16)
+    assert len(wav) > 0, "Wav is empty"
+    # handle codecs
+    buffer_sum = b''
+    if codec == "wav":
+        # sf.write("temp-testing.wav", wav, 24000)
+        wav = librosa.resample(wav, orig_sr=24000, target_sr=40000)
+        wav = (wav * 32768.0).astype(np.int16)
+      
+        wav = remove_silence_at_end_op(wav, sample_rate=40000)
+        buffer_sum = numpy_to_bytes(wav, sample_rate=40000, sample_width=2, channels=1)
+    
+    elif codec == "flac":
+        # convert to flac
+        buffer_sum = encode_flac(wav, sample_rate=24000, target_sr=40000, channels=1, compression_level=8)
+    elif codec == "opus":
+        # convert to opus
+        buffer_sum = encode_ffmpeg(wav, codec_type="opus", sample_rate=24000, target_sr=48000, channels=1, bitrate=bitrate)
+    elif codec == "vorbis":
+        # convert to vorbis
+        buffer_sum = encode_ffmpeg(wav, codec_type="vorbis", sample_rate=24000, target_sr=40000, channels=1, bitrate=bitrate)
 
-
-    wav = base64.b64encode(wav.tobytes())
-    buffer_size = 8000
-    for i in range(0, len(wav), buffer_size):
-        await websocket.send(wav[i:i+buffer_size])
+    # print("Buffer size:", len(buffer_sum))
+    
+ 
+    # send to websocket
+    await send_data_to_websocket(websocket, buffer_sum)
 
 
                
 print("Server is starting...")
 
-# print fast stretch and pitch shifts with sample rate 24000
+# # print fast stretch and pitch shifts with sample rate 24000
 
 # start websocket server
 start_server = websockets.serve(synthesize, "0.0.0.0", 8767)
