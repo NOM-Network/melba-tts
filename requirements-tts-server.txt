@@ -1,0 +1,24 @@
+SoundFile
+torchaudio
+munch
+torch
+pydub
+pyyaml
+librosa
+nltk
+matplotlib
+accelerate
+transformers
+einops
+einops-exts
+tqdm
+typing
+typing-extensions
+git+https://github.com/resemble-ai/monotonic_align.git
+
+PyOgg @ git+https://github.com/TeamPyOgg/PyOgg@6871a4f234e8a3a346c4874a12509bfa02c4c63a
+websockets
+ffmpeg-python
+phonemizer==3.2.1
+pyFLAC==2.2.0
+audiostretchy==1.3.5

@@ -12,6 +12,25 @@ random.seed(0)
 import numpy as np
 np.random.seed(0)
 
+import phonemizer
+from scipy.interpolate import interp1d
+import numpy as np
+import librosa
+import asyncio
+import websockets
+import json
+import base64
+import os
+import time
+from scipy.signal import resample
+import io
+
+from fractions import Fraction
+from scipy.io import wavfile
+import soundfile as sf
+import numpy as np
+import ffmpeg
+import pyogg
 
 # load packages
 import time
@@ -60,7 +79,6 @@ def compute_style(path):
     return torch.cat([ref_s, ref_p], dim=1)
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-import phonemizer
 global_phonemizer = phonemizer.backend.EspeakBackend(language='en-us', preserve_punctuation=True,  with_stress=True)
 config = yaml.safe_load(open("Models/LibriTTS/config.yml"))
 
@@ -194,8 +212,6 @@ def inference(text, ref_s, alpha = 0.3, beta = 0.7, diffusion_steps=5, embedding
 
 
     return out
-import numpy as np
-import librosa
 
 
 def remove_silence_at_end_op(pcm_array, sample_rate=40000, sample_width=2):
@@ -241,13 +257,7 @@ def remove_silence_at_end_op(pcm_array, sample_rate=40000, sample_width=2):
     return trimmed_pcm_array
 
 # async websocket server
-import asyncio
-import websockets
-import json
-import base64
-import os
-import time
-from scipy.signal import resample
+
 def pitch_shift(audio_array, factor):
     # Calculate the new length of the audio array after pitch shifting
     new_length = int(len(audio_array) / factor)
@@ -257,20 +267,6 @@ def pitch_shift(audio_array, factor):
 
     return pitched_up_array
 
-
-from scipy.interpolate import interp1d
-
-import io
-
-from fractions import Fraction
-from scipy.io import wavfile
-# wavfile.read("If_you_aren-t_subscribed_3.wav")
-import soundfile as s
-import numpy as np
-import ffmpeg
-import opuslib
-import pydub
-import pyogg
 
 def align_array_to_frame_duration(pcm, channels, samples_per_second):
    
@@ -334,7 +330,6 @@ def encode_ffmpeg(input_pcm_array, codec_type="vorbis",sample_rate=24000,target_
     # with open(f"temp-test-{bitrate}kbps-{acodec}.ogg", "wb") as f:
         # f.write(opus_bytes)
     return ffmpeg_bytes
-
 def encode_flac(input_pcm_array, sample_rate=24000, target_sr=40000,channels=1, compression_level=8):
     # encode to flac
     start = time.perf_counter()
@@ -350,8 +345,11 @@ def encode_flac(input_pcm_array, sample_rate=24000, target_sr=40000,channels=1, 
         # different callbacks. Otherwise `num_samples` will be
         # the block size value.
             pass
-      
+        # if len(buffer_sum) >= 80
+        # write to websocket
         buffer_sum += buffer
+
+
     input_pcm_array = librosa.resample(input_pcm_array, orig_sr=sample_rate, target_sr=target_sr)
     input_pcm_array = (input_pcm_array * 32768.0).astype(np.int16)
     input_pcm_array = remove_silence_at_end_op(input_pcm_array, sample_rate=target_sr)
@@ -377,7 +375,6 @@ def numpy_to_bytes(wav, sample_rate=24000, sample_width=2, channels=1):
 
 from audiostretchy.stretch import AudioStretch
 import pyflac
-import re
 # at /synthesize
 async def synthesize(websocket, path):
     data = await websocket.recv()
@@ -391,7 +388,9 @@ async def synthesize(websocket, path):
     codec = json_data['codec'] if "codec" in json_data else "wav"
     output_sr = json_data['output_sr'] if "output_sr" in json_data else 40000
     bitrate = json_data['bitrate'] if "bitrate" in json_data else 64
-
+    print("text: ", text)
+    print("codec: ", codec)
+    
     # print("speed: ", speed)
     override_alpha = False
     override_beta = False
@@ -458,6 +457,7 @@ async def synthesize(websocket, path):
         # raise server error if text is not a string
         override_alpha = True
         override_beta = True
+    print(f"Actual text: {text}")
 
     # clamp to 0.0 to 1.0
     alpha = max(0.0, min(1.0, alpha)) if not override_alpha else 0.0
@@ -472,12 +472,13 @@ async def synthesize(websocket, path):
         if os.path.exists("./Samples/" + ref_file):
             ref_s = compute_style("./Samples/" + ref_file)
         else:
-            # download file
-            import requests
-            r = requests.get(ref_file, allow_redirects=True)
-            fname = ref_file.split('/')[-1]
-            open("./Samples/" + fname, 'wb').write(r.content)
-            ref_s = compute_style("./Samples/" + fname)
+            # # download file
+            # import requests
+            # r = requests.get(ref_file, allow_redirects=True)
+            # fname = ref_file.split('/')[-1]
+            # open("./Samples/" + fname, 'wb').write(r.content)
+            print("File does not exist")
+            ref_s = compute_style("./Samples/default.wav")
     except:
         ref_s = compute_style("default.wav")
 
@@ -486,7 +487,7 @@ async def synthesize(websocket, path):
  
     wav = inference(text, ref_s, diffusion_steps=10, alpha=alpha, beta=beta, embedding_scale=1.0, speed=1.0, return_device='cpu')
     end = time.perf_counter()
-    # print("Inference time: ", (end - start) * 1000, "ms")
+    print("Inference time: ", (end - start) * 1000, "ms")
     # convert to floast32 to int16
     wav = wav.astype(np.float32)
 
@@ -521,12 +522,23 @@ async def synthesize(websocket, path):
 
     async def send_data_to_websocket(websocket, buffer):
         # split into 8000 byte chunks
-        await websocket.send(buffer)
+        print("Buffer size:", len(buffer))
+        split = [buffer[i:i + 80000] for i in range(0, len(buffer), 80000)]
+        # await websocket.send(buffer)
+        for i in range(len(split)):
+            await websocket.send(split[i])
         
 
     assert len(wav) > 0, "Wav is empty"
     # handle codecs
     buffer_sum = b''
+    if codec == "numpy":
+        # return numpy bytes, resample and int before return
+        wav = librosa.resample(wav, orig_sr=24000, target_sr=40000)
+        wav = (wav * 32768.0).astype(np.int16)
+        buffer_sum = wav.tobytes()
+        buffer_sum = base64.b64encode(buffer_sum)
+
     if codec == "wav":
         # sf.write("temp-testing.wav", wav, 24000)
         wav = librosa.resample(wav, orig_sr=24000, target_sr=40000)
@@ -555,7 +567,6 @@ async def synthesize(websocket, path):
                
 print("Server is starting...")
 
-# # print fast stretch and pitch shifts with sample rate 24000
 
 # start websocket server
 start_server = websockets.serve(synthesize, "0.0.0.0", 8767)

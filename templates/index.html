@@ -11,16 +11,16 @@
         <label for="ref_clip">Select an reference clip:</label>
         <select id="ref_clip" name="ref_clip">
             <option value="default">default</option>
-            <option value="other">other</option>
-            <option value="meow">meow</option>
+            <option value="other">65</option>
+            <!-- <option value="meow">meow</option> -->
             <option value="laugh">laugh</option>
-            <option value="rawr">rawr</option>
+            <!-- <option value="rawr">rawr</option> -->
             <option value="scream">scream</option>
             <option value="express">express</option>
             <option value="express2">express2</option>
         </select><br>
         <label for="pitch">Pitch (-12.0-24.0):</label>
-        <input type="text" name="pitch" id="pitch" placeholder="10.0" value="10.0" required><br>
+        <input type="text" name="pitch" id="pitch" placeholder="11.0" value="11.0" required><br>
         <p>Higher means higher pitch, 12.0 is one ocative</p>
 
         <label for="speed">Speed (0.1-3.0):</label>
@@ -36,6 +36,15 @@
         <input type="text" name="beta" id="beta" placeholder="0.7" value="0.7" required><br>
         <p>Changes the porosity of the generated audio. How similar the emotion is to the speaker reference clip. </p>
 
+        <h3>Voice V3 settings</h3>
+        <label for="noise_scale_ttv">ttv (0.0-1.0):</label>
+        <input type="text" name="noise_scale_ttv" id="noise_scale_ttv" placeholder="0.333" value="0.333" required><br>
+        <!-- <p>Changes the timbre of the generated audio. How similar the acoustic environment is to the speaker reference clip. </p> -->
+
+        <label for="noise_scale_vc">vc (0.0-1.0):</label>
+        <input type="text" name="noise_scale_vc" id="noise_scale_vc" placeholder="0.333" value="0.333" required><br>
+        <!-- <p>Changes the porosity of the generated audio. How similar the emotion is to the speaker reference clip. </p> -->
+
 
         <!-- codec-->
         <label for="codec">Select a codec:</label>
@@ -48,23 +57,23 @@
 
 
         <!-- bitrate-->
-        <label for="bitrate">Input a bitrate:</label>
-        <input type="text" name="bitrate" id="bitrate" placeholder="64" value="64" required><br>
+        <!-- <label for="bitrate">Input a bitrate:</label> -->
+        <!-- <input type="text" name="bitrate" id="bitrate" placeholder="64" value="64" required><br> -->
 
-        <h3>Voice V2 + RVC settings</h3>
-        <label for="pitch2">2nd stage pitch (-12.0-24.0):</label>
-        <input type="text" name="pitch2" id="pitch2" placeholder="4.0" value="4.0" required><br>
+        <!-- <h3>Voice V2 + RVC settings</h3> -->
+        <!-- <label for="pitch2">2nd stage pitch (-12.0-24.0):</label> -->
+        <!-- <input type="text" name="pitch2" id="pitch2" placeholder="4.0" value="4.0" required><br> -->
 
  
         <label for="voice">Select a Voice:</label><br>
         <!-- <input type="radio" name="voice" value="voice1" id="voice1" checked>
         <label for="voice1">Voice 1</label><br> -->
-        <input type="radio" name="voice" value="voice1" id="voice1" >
-        <label for="voice1">Voice V1</label><br>
+        <!-- <input type="radio" name="voice" value="voice1" id="voice1" > -->
+        <!-- <label for="voice1">Voice V1</label><br> -->
         <input type="radio" name="voice" value="voice2" id="voice2" checked>
         <label for="voice2">Voice V2</label><br>
         <input type="radio" name="voice" value="voice3" id="voice3">
-        <label for="voice3">Voice V2 + RVC</label><br>
+        <label for="voice3">Voice V3</label><br>
         <br>
         <input type="submit" value="Synthesize and Download WAV">
     </form>
